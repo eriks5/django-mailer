@@ -7,7 +7,13 @@ from socket import error as socket_error
 
 from django.conf import settings
 from django.core.mail import send_mail as core_send_mail
-from django.core.mail import get_connection
+try:
+    # Django 1.2
+    from django.core.mail import get_connection
+except ImportError:
+    # ImportError: cannot import name get_connection
+    from django.core.mail import SMTPConnection
+    get_connection = lambda backend=None, fail_silently=False, **kwds: SMTPConnection(fail_silently=fail_silently)
 from django.db import transaction
 
 from mailer.models import Message, DontSendEntry, MessageLog
@@ -57,9 +63,14 @@ def mark_as_deferred(message, err=None):
     logging.info("message deferred due to failure: %s" % err)
     MessageLog.objects.log(message, 3, log_message=str(err)) # @@@ avoid using literal result code
 
-def send_all():
+def send_all(limit=None):
     """
-    Send all eligible messages in the queue.
+    Send eligible messages in the queue.
+    
+    Argument 'limit' limits the number of medium and low-priority messages sent:
+      First all high priority messages are sent, and if the number of messages sent does not exceed
+      'limit', any medium and low-priority messages are sent, until 'limit' messages have been sent.
+      If 'limit' is None or 0, all non-deferred messages are sent.
     """
     
     lock = FileLock("send_mail")
@@ -77,13 +88,15 @@ def send_all():
     
     start_time = time.time()
     
-    dont_send = 0
     deferred = 0
     sent = 0
     
     try:
         connection = None
         for message in prioritize():
+            if limit and message.priority>"1" and sent+deferred>=limit:
+                break
+            
             try:
                 if connection is None:
                     connection = get_connection(backend=EMAIL_BACKEND)
@@ -117,7 +130,7 @@ def send_all():
     logging.info("%s sent; %s deferred;" % (sent, deferred))
     logging.info("done in %.2f seconds" % (time.time() - start_time))
 
-def send_loop():
+def send_loop(limit=None):
     """
     Loop indefinitely, checking queue at intervals of EMPTY_QUEUE_SLEEP and
     sending messages if any are on queue.
@@ -127,4 +140,4 @@ def send_loop():
         while not Message.objects.all():
             logging.debug("sleeping for %s seconds before checking queue again" % EMPTY_QUEUE_SLEEP)
             time.sleep(EMPTY_QUEUE_SLEEP)
-        send_all()
+        send_all(limit)

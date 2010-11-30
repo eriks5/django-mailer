@@ -1,4 +1,5 @@
 import base64
+import base64
 import logging
 import pickle
 
@@ -38,6 +39,26 @@ class MessageManager(models.Manager):
             if message.retry(new_priority):
                 count += 1
         return count
+
+
+def email_to_db(email):
+    # pickle.dumps returns essentially binary data which we need to encode
+    # to store in a unicode field.
+    return base64.encodestring(pickle.dumps(email))
+
+
+def db_to_email(data):
+    if data == u"":
+        return None
+    else:
+        try:
+            return pickle.loads(base64.decodestring(data))
+        except Exception:
+            try:
+                # previous method was to just do pickle.dumps(val)
+                return pickle.loads(data.encode("ascii"))
+            except Exception:
+                return None
 
 
 def email_to_db(email):
@@ -150,10 +171,13 @@ class DontSendEntryManager(models.Manager):
         is the given address on the don't send list?
         """
         
-        if self.filter(to_address__iexact=address).exists():
-            return True
-        else:
-            return False
+        queryset = self.filter(to_address__iexact=address)
+        try:
+            # Django 1.2
+            return queryset.exists()
+        except AttributeError:
+            # AttributeError: 'QuerySet' object has no attribute 'exists'
+            return bool(queryset.count())
 
 
 class DontSendEntry(models.Model):
