@@ -6,7 +6,6 @@ from lockfile import FileLock, AlreadyLocked, LockTimeout
 from socket import error as socket_error
 
 from django.conf import settings
-from django.core.mail import send_mail as core_send_mail
 try:
     # Django 1.2
     from django.core.mail import get_connection
@@ -16,7 +15,7 @@ except ImportError:
     get_connection = lambda backend=None, fail_silently=False, **kwds: SMTPConnection(fail_silently=fail_silently)
 from django.db import transaction
 
-from mailer.models import Message, DontSendEntry, MessageLog
+from mailer.models import Message, MessageLog
 
 
 # when queue is empty, how long to wait (in seconds) before checking again
